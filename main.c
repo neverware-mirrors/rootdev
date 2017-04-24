@@ -136,10 +136,13 @@ int main(int argc, char **argv) {
                         flag_use_slave,
                         flag_strip_partition,
                         &root_dev,
+                        flag_path,
                         flag_block_path,
                         flag_dev_path);
 
-  if (ret == 1 && flag_create) {
+  /* root_dev can be zero-out by rootdev_wrapper when virtual
+   * device id is used (e.g. btrfs). */
+  if (root_dev != 0 && ret == 1 && flag_create) {
     /* TODO(wad) add flag_force to allow replacement */
     ret = 0;
     if (mknod(path, S_IFBLK | S_IRUSR | S_IWUSR, root_dev) && errno != EEXIST) {

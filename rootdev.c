@@ -17,9 +17,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/ioctl.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <sys/vfs.h>
 #include <unistd.h>
+#include <linux/btrfs.h>
+#include <linux/magic.h>
 
 /*
  * Limit prevents endless looping to find slave.
@@ -366,18 +370,61 @@ int rootdev_get_path(char *path, size_t size, const char *device,
   return 0;
 }
 
+static int get_rootdev_btrfs(char *path, size_t size, const char *mount_path) {
+  const char *di_path;
+
+  /* Open the mount point path */
+  int fd = open(mount_path, O_RDONLY | O_CLOEXEC);
+  if (fd == -1) {
+    return -1;
+  }
+  /* Create space to hold the ioctl dev info. */
+  struct btrfs_ioctl_dev_info_args di_args;
+  /* Since we use always use single device in chromebook rootfs,
+   * the device id for this device is always 1. */
+  di_args.devid = 1;
+  /* Read the ioctl device info (btrfs). */
+  if (ioctl(fd, BTRFS_IOC_DEV_INFO, &di_args) != 0) {
+    close(fd);
+    return -1;
+  }
+  close(fd);
+
+  di_path = (const char *)di_args.path;
+  /* Try to access the device at di_args->path to verify its existence. */
+  if (access((char *)di_path, F_OK) != 0) {
+    return -1;
+  }
+  if (strlen(di_path) >= size)
+    return -1;
+  strcpy(path, di_path);
+  return 0;
+}
+
 int rootdev_wrapper(char *path, size_t size,
                     bool full, bool strip,
                     dev_t *dev,
+                    const char *mount_path,
                     const char *search, const char *dev_path) {
   int res = 0;
   char devname[PATH_MAX];
+  struct statfs mount_statfs;
+
   if (!search)
     search = kDefaultSearchPath;
   if (!dev_path)
    dev_path = kDefaultDevPath;
   if (!dev)
     return -1;
+  if (statfs(mount_path, &mount_statfs) == 0) {
+    if (mount_statfs.f_type == BTRFS_SUPER_MAGIC) {
+      /* BTRFS uses virtual device id which is different from actual
+       * device id. So we zero-out dev_t indicating that dev_t is not
+       * a valid device id. */
+      *dev = 0;
+      return get_rootdev_btrfs(path, size, mount_path);
+    }
+  }
 
   res = rootdev_get_device(devname, sizeof(devname), *dev, search);
   if (res != 0)
@@ -426,6 +473,7 @@ int rootdev(char *path, size_t size, bool full, bool strip) {
                          full,
                          strip,
                          root_dev,
+                         "/",
                          NULL,  /* default /sys dir */
                          NULL);  /* default /dev dir */
 }

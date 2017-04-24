@@ -37,6 +37,7 @@ int rootdev(char *path, size_t size, bool full, bool strip);
 int rootdev_wrapper(char *path, size_t size,
                     bool full, bool strip,
                     dev_t *dev,
+                    const char *mount_path,
                     const char *search, const char *dev_path);
 /**
  * rootdev_get_device: finds the /dev path for @dev
