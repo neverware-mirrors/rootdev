@@ -218,10 +218,18 @@ void rootdev_strip_partition(char *dst, size_t len) {
   char *part = (char *)rootdev_get_partition(dst, len);
   if (!part)
     return;
+
+  /* For devices matching dm-NN, the digits are not a partition. */
+  if (*(part - 1) == '-')
+    return;
+
   /* For devices that end with a digit, the kernel uses a 'p'
-   * as a separator. E.g., mmcblk1p2. */
-  if (*(part - 1) == 'p')
+   * as a separator. E.g., mmcblk1p2 and loop0p1, but not loop0. */
+  if (*(part - 1) == 'p') {
     part--;
+    if (strncmp(dst, "loop", 4) == 0 && dst + 3 == part)
+      return;
+  }
   *part = '\0';
 }
 

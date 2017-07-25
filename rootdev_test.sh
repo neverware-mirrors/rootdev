@@ -279,6 +279,72 @@ t12_sda_strip () {
 }
 run_test t12_sda_strip
 
+# Set up dev nodes and minimal /sys/block entries for a loopback device with a
+# partition on it.
+#
+# Using the same major for the partition doesn't accurately reflect how a real
+# partitioned loopback device would be created, but rootdev doesn't currently
+# support partitions with a different major number than their containing device.
+# This setup can only be used to test that the partition stripping code
+# correctly handles both loop0 and loop0p1.
+h03_setup_loop_tree() {
+  local block=$1
+  local dev=$2
+  mkdir -p $block/loop0/loop0p1
+  mkdir -p $dev
+  echo "7:0" > $block/loop0/dev
+  echo "7:10" > $block/loop0/loop0p1/dev
+  mknod $dev/loop0 b 7 0
+  mknod $dev/loop0p1 b 7 10
+}
+
+# Verify that the pN doesn't get stripped from loopN.
+t13_loop_nostrip_device() {
+  local block=$WORKDIR/sys/block
+  local dev=$WORKDIR/dev
+  h03_setup_loop_tree $block $dev
+  out=$("${ROOTDEV}" -d --dev $dev --block $block --major 7 --minor 0 \
+        2>/dev/null)
+  expect "$? -eq 0" || return 1
+  expect "'$dev/loop0' = '$out'" || return 1
+}
+run_test t13_loop_nostrip_device
+
+# Verify that the pM does get stripped from loopNpM.
+t14_loop_strip_partition() {
+  local block=$WORKDIR/sys/block
+  local dev=$WORKDIR/dev
+  h03_setup_loop_tree $block $dev
+  out=$("${ROOTDEV}" -d --dev $dev --block $block --major 7 --minor 10 \
+        2>/dev/null)
+  expect "$? -eq 0" || return 1
+  expect "'$dev/loop0' = '$out'" || return 1
+}
+run_test t14_loop_strip_partition
+
+# Set up dev nodes and minimal /sys/block entries for a device mapper device.
+h04_setup_dm_tree() {
+  local block=$1
+  local dev=$2
+  mkdir -p $block
+  mkdir -p $dev
+  mkdir -p $block/dm-3
+  echo "252:3" > $block/dm-3/dev
+  mknod $dev/dm-3 b 252 3
+}
+
+# Verify that the -NN doesn't get stripped from dm-NN.
+t15_dm_strip() {
+  local block=$WORKDIR/sys/block
+  local dev=$WORKDIR/dev
+  h04_setup_dm_tree $block $dev
+  out=$("${ROOTDEV}" -d --dev $dev --block $block --major 252 --minor 3 \
+        2>/dev/null)
+  expect "$? -eq 0" || return 1
+  expect "'$dev/dm-3' = '$out'" || return 1
+}
+run_test t15_dm_strip
+
 # TODO(wad) add node creation tests
 
 TEST_COUNT=$((PASS_COUNT + FAIL_COUNT))
